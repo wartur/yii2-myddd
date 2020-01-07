@@ -2,4 +2,4 @@
 Методология RAD разработки для Yii2.
 Помогает писать код быстро и качественно.
 
-Подробнее на https://wartur.ru/o-zhizni/rad-razrabotka-na-yii2/
+Подробнее на https://wartur.ru/o-razrabotke/rad-razrabotka-na-yii2/
