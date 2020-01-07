@@ -21,7 +21,7 @@
         "issues": "https://github.com/wartur/yii2-myddd/issues?state=open",
         "source": "https://github.com/wartur/yii2-myddd"
     },
-    "minimum-stability": "dev",
+    "minimum-stability": "stable",
     "require": {
         "php": ">=7.0.0",
         "yiisoft/yii2": "~2.0.14"
