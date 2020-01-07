@@ -4,7 +4,7 @@
     "keywords": [
         "yii2",
         "myddd",
-        "ddd",
+        "ddd"
     ],
     "homepage": "https://github.com/wartur/yii2-myddd",
     "type": "yii2-extension",
@@ -15,7 +15,7 @@
             "email": "gwartur@gmail.com",
             "homepage": "https://wartur.ru",
             "role": "Founder"
-        },
+        }
     ],
     "support": {
         "issues": "https://github.com/wartur/yii2-myddd/issues?state=open",
@@ -24,14 +24,14 @@
     "minimum-stability": "dev",
     "require": {
         "php": ">=7.0.0",
-        "yiisoft/yii2": "~2.0.14",
+        "yiisoft/yii2": "~2.0.14"
     },
     "require-dev": {
-        "phpunit/phpunit": "4.8.34",
+        "phpunit/phpunit": "4.8.34"
     },
     "autoload": {
         "psr-4": {
-            "wartur\\myddd\\": "src/",
+            "wartur\\myddd\\": "src/"
         }
-    },
+    }
 }
