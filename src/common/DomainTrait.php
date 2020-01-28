@@ -8,13 +8,13 @@
 
 namespace wartur\myddd\common;
 
-use Yii;
-use yii\base\Exception;
+use yii\base\InvalidConfigException;
+use yii\helpers\Json;
 
 /**
  * Поведение доменной модели
  * 
- * Здесь располагаются общий функционал для методологии Yii2::DDD для:
+ * Здесь располагаются общий функционал для методики MyDDD для:
  * - DomainModel
  * - DomainActiveRecord
  */
@@ -33,33 +33,23 @@ trait DomainTrait
      * В классе рекомендуется создавать константы по шаблону ERROR_*
      * для перечисления всех поддерживаемых ошибок класса
      */
-    public $domainLastError = DomainInterface::ERROR_DEFAULT;
+    public $domainLastError = null;
 
     /**
-     * Поведение при неуспешной валидации.
-     * Это поведение возможно изменить, переопределив данный метод.
+     * Является ли текущая модель фронтенд или бэкенд моделью.
      * 
-     * Например можно активировать автоматический выброс исключений
-     * при валидации Бэкенд моделей (не знаю зачем, но можно)
+     * В случае если это бэкенд модель. На процессе валидации будет выкидываться
+     * исключение InvalidConfigException
      * 
-     * ```php
-     * public function validateFailedDefaultBehavior()
-     * {
-     *     $this->falseWithException('Ошибка валидации модели');
-     * }
-     * ```
+     * Может быть переопределено. Например, вы можете унаследоваться от любой
+     * бэкенд модели и сделать на основе её конфигурации фронтенд модель
+     * еще раз переопределив метод
      * 
-     * Или вообще ничего не делать
-     * ```php
-     * public function validateFailedDefaultBehavior()
-     * {
-     *     // не делаем ничего, потому что...
-     * }
-     * ```
+     * @return boolean
      */
-    public function validateFailedDefaultBehavior()
+    public function isBackendModel()
     {
-        $this->falseWithError(DomainInterface::ERROR_VALIDATION);
+        return false;
     }
 
     /**
@@ -69,7 +59,7 @@ trait DomainTrait
      * В основном используется для работы в Фронтент моделях
      * 
      * В качестве опции, можно добавить addError для отображения пользователю
-     * о каких-либо проблемах
+     * о каких-либо проблемах на каком-то аттрибуте
      * 
      * ```php
      * public function beforeSave()
@@ -79,14 +69,12 @@ trait DomainTrait
      * }
      * ```
      * 
-     * @param string $domainLastError информация о последней ошибке,
-     * рекомендуется использовать константы ERROR_*
-     * для возможной дальнейшей обработке выше по стеку вызова.
+     * @param string $domainLastError информация о последней ошибке
      * @param string $addErrorAttribute атрибут модели для которой требуется добавить
      * ошибку как в domainLastError
      * @return boolean ВСЕГДА возвращает FALSE
      */
-    public function falseWithError($domainLastError, $addErrorAttribute = false)
+    public function falseWithError($domainLastError = 'Неизвестная ошибка', $addErrorAttribute = '_domainLastError')
     {
         $this->domainLastError = $domainLastError;
         if ($addErrorAttribute) {
@@ -96,115 +84,134 @@ trait DomainTrait
     }
 
     /**
-     * Синтаксический сахар
+     * Получить список unsafe аттрибутов.
      * 
-     * Установить ошибку и выкинуть исключение
-     * В основном используется для работы в Бэкед моделях
+     * Данные берутся из сценария
+     * если в сценарии одновременно встретились safe и unsafe аттрибуты,
+     * устанавливаем приоритет safe аттрибута
      * 
-     * ```php
-     * public function beforeSave()
-     * {
-     *     // some code
-     *     return $this->falseWithException('У пользователя не хватает средств');
-     * }
-     * ```
+     * Это позволяет брать бэкенд модель и делать из нее фронтенд модель
      * 
-     * @param string $domainLastError информация о последней ошибке,
-     * рекомендуется использовать константы ERROR_*
-     * для возможной дальнейшей обработке выше по стеку вызова.
-     * @param class $exceptionClass класс, который требуется использовать в исключении
-     * Если требуется создать более умный класс с доп полями
-     * не используйте данный метод, реализуйте его самостоятельно
-     * @throws $exceptionClass
+     * @return array
      */
-    public function falseWithException($domainLastError, $exceptionClass = Exception::class)
+    public function unsafeAttributes()
     {
-        $this->domainLastError = $domainLastError;
-        throw new $exceptionClass($domainLastError);
+        $scenario = $this->getScenario();
+        $scenarios = $this->scenarios();
+        if (!isset($scenarios[$scenario])) {
+            return [];
+        }
+        $unsafeAttributes = [];
+        $safeAttributes = [];
+        foreach ($scenarios[$scenario] as $attribute) {
+            // получим unsafe аттрибуты в сценарии
+            if ($attribute[0] === '!' && !in_array($attribute, $unsafeAttributes)) {
+                $unsafeAttributes[] = substr($attribute, 1); // уберем "!"
+            }
+
+            // получим safe аттрибуты в сценарии
+            if ($attribute[0] !== '!' && !in_array($attribute, $safeAttributes)) {
+                $safeAttributes[] = $attribute;
+            }
+        }
+
+        // если одновременно встретились safe и unsafe аттрибуты,
+        // устанавливаем приоритет safe аттрибута
+        $return = [];
+        foreach ($unsafeAttributes as $entry) {
+            // если аттрибут найден в safe, то не добавляем его
+            if (!in_array($entry, $safeAttributes)) {
+                $return[] = $entry;
+            }
+        }
+        return $return;
     }
 
     /**
-     * Синтаксический сахар
+     * Валидация модели
      * 
-     * Установить ошибку, записать в warning лог информацию и вернуть false
+     * Видоизменяем процесс валидации модели в зависимости от того
+     * какая модель сконфигурирована - фронтенд или бэкенд
      * 
-     * ```php
-     * public function beforeSave()
-     * {
-     *     // some code
-     *     return $this->falseWithWarning('Неудалось получить информацию о пользователе от API');
-     * }
-     * ```
+     * если в unsafe аттрибутах присутствуют ошибки
+     * то в бэкенд или в фронтенд-моделе следует выбросить исключение InvalidConfigException
+     * InvalidConfigException - считается ошибкой программиста
      * 
-     * @param string $domainLastError информация о последней ошибке,
-     * рекомендуется использовать константы ERROR_*
-     * для возможной дальнейшей обработке выше по стеку вызова.
-     * @param string $logCategory категория лога (второй параметр Yii::warning)
-     * @return boolean ВСЕГДА возвращает FALSE
+     * @param array|null $attributeNames
+     * @param boolean $clearErrors
+     * @return boolean
+     * @throws InvalidConfigException ошибка конфигурации объекта
      */
-    public function falseWithWarning($domainLastError = null, $logCategory = null)
+    protected function domainValidate($attributeNames = null, $clearErrors = true)
     {
-        $this->domainLastError = $domainLastError;
-        Yii::warning($domainLastError, $logCategory);    // кладем в лог
-        return false;
-    }
+        if (parent::validate($attributeNames, $clearErrors)) {
+            return true;
+        } else {
+            // если в unsafe аттрибутах присутствуют ошибки
+            // то в бэкенд или в фронтенд-моделе следует выбросить исключение InvalidConfigException
+            // InvalidConfigException - считается ошибкой программиста
+            foreach ($this->unsafeAttributes() as $entry) {
+                if ($this->hasErrors($entry)) {
+                    throw new InvalidConfigException('Ошибка конфигурации ' . $this->className() . ' : ' . Json::encode($this->getErrors()));
+                }
+            }
 
-    /**
-     * Синтаксический сахар
-     * 
-     * Установить ошибку, записать в warning лог информацию и вернуть false
-     * Если приложение работает в режиме разработки выкинуть исключение
-     * Позволяет обращать внимание на места, где возникает ошибка, однако код может
-     * быть продолжен на продакшене
-     * 
-     * ```php
-     * public function beforeSave()
-     * {
-     *     // some code
-     *     return $this->falseWithWarningOnDebugExecption('Что-то не получилось');
-     * }
-     * ```
-     * 
-     * @param string $domainLastError информация о последней ошибке,
-     * рекомендуется использовать константы ERROR_*
-     * для возможной дальнейшей обработке выше по стеку вызова.
-     * @param string $logCategory категория лога (второй параметр Yii::warning)
-     * @return boolean ВСЕГДА возвращает FALSE
-     * @throws Exception исключение в случае YII_DEBUG
-     */
-    public function falseWithWarningOnDebugExecption($domainLastError = null, $logCategory = null)
-    {
-        $this->falseWithWarning($domainLastError, $logCategory);
-        if (YII_DEBUG) {
-            throw new Exception($domainLastError);
+            return false;
         }
     }
 
     /**
-     * Синтаксический сахар
-     * 
-     * Записать в лог Yii::info информацию о событии и вернуть true
-     * Позволяет логгировать некоторые моменты
+     * Конфигурация единственного сценария SCENARIO_DEFAULT для ядра Yii2
      * 
      * ```php
-     * public function beforeSave()
-     * {
-     *     // some code
-     *     return $this->trueWithInfo('Права пользователя проверены на сервере авторизации');
-     * }
+     * // обычно при создании доменной модели для точного ограничения полей
+     * return ['publicProperty', '!safeProperty'];
+     * 
+     * // в случае если доменная модель с наследованием от абстрактной
+     * return array_merge(parent::scenariosUno(), ['publicProperty', '!safeProperty']);
      * ```
      * 
-     * @param string $logMessage информация о событии
-     * @param string $logCategory категория лога (второй параметр Yii::info)
-     * @return boolean ВСЕГДА возвращает TRUE
+     * ВАЖНО:
+     * Вместо этого метода рекомендуется пользоваться
+     * - scenariosBackend
+     * - scenariosFrontend
+     * Их можно в дальнейшем наследовать
+     * 
+     * @return array
      */
-    public function trueWithInfo($logMessage = null, $logCategory = null)
+    protected function domainScenariosUno()
     {
-        if (isset($logMessage)) {
-            Yii::info($logMessage, $logCategory);
+        $scenariosBackend = $this->scenariosBackend();
+        $scenariosFrontend = $this->scenariosFrontend();
+
+        // если не заданы 2 специализировнных метода, то считаем что это повдение AR-модели по умолчанию
+        if (empty($scenariosBackend) && empty($scenariosFrontend)) {
+            return parent::scenarios() [self::SCENARIO_DEFAULT];    // берем сценарии AR-модели по умолчанию
         }
 
-        return true;
+        // добавим восклицательный знак. Пометим атррибуты как unsafe
+        foreach ($scenariosBackend as &$entry) {
+            $entry = '!' . $entry;
+        }
+        unset($entry);
+
+        // смерджим, получим общий набор правил для скармливания Yii2
+        return array_merge($scenariosBackend, $scenariosFrontend);
+    }
+
+    /**
+     * Правила для модели поиска
+     * Просто удаляем все required поля
+     */
+    public static function clearRequiredRules($rules)
+    {
+        $result = [];
+        foreach ($rules as $entry) {
+            if ($entry[1] != 'required') {
+                $result[] = $entry;
+            }
+        }
+        return $result;
     }
 
 }
