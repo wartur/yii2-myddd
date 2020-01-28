@@ -13,14 +13,16 @@ namespace wartur\myddd;
  * Является прозрачной настройкой над Yii2 Model,
  * за исключением отключённого механизма сценариев.
  * 
- * Это набор удобных инструментов для работы с методологией MyDDD в Yii2
+ * Это набор удобных инструментов для работы по методике MyDDD в Yii2
  * Во главе угла ставится удобное конфигурирование класса, которое вместе
  * с названием класса является удобной документацией.
  * Все инструменты за исключением сценариев надстроены над ядром Yii2
  * 
+ * Считается, что класс должен выполнять одну единственную задачу "execute"
+ * 
  * Пример оформления рабочего класса 
  * ```php
- * namespace app\models\someService;
+ * namespace app\models\frontend\someService;
  * 
  * class SomeOperationForm extends DomainModel
  * {
@@ -28,6 +30,14 @@ namespace wartur\myddd;
  * 
  *     public $email;
  *     public $safeProperty;
+ *
+ *     public scenariosBackend() {
+ *         return ['safeProperty'];
+ *     }
+ * 
+ *     public scenariosFrontend() {
+ *         return ['email'];
+ *     }
  * 
  *     public function rules() {
  *         return [
@@ -36,13 +46,9 @@ namespace wartur\myddd;
  *         ];
  *     }
  * 
- *     public function scenariosUno() {
- *         return ['email', '!safeProperty'];
- *     }
- * 
- *     public function execute () {
- *         if(!$this->validate()) {
- *             return false; // falseWithError не нужно, оно обрабатывается автоматически
+ *     public function execute() {
+ *         if(!$this->execute()) {
+ *             return false;
  *         }
  *         
  *         // do somethink...
@@ -51,22 +57,37 @@ namespace wartur\myddd;
  *             return $this->falseWithError(self::ERROR_SOMERROR);
  *         }
  *         
- *         return $this->true('Это сообщние пойдет в Yii::info');
+ *         return true;
  *     }
- * 
- *     // считается, что класс должен выполнять одну единственную задачу,
- *     // но никто не мешает сюда напихать ещё кода, ибо форма может быть
- *     // одна но действия могут с ней быть разными,
- *     // поэтому не всегда надо дробить код при RAD
  * }
  * ```
  * 
- * Остальное читайте в документации к методологии MyDDD
+ * Остальное читайте в документации по методике MyDDD
  */
-class DomainModel extends \yii\base\Model implements common\DomainInterface
+class DomainModel extends \yii\base\Model
 {
 
     use common\DomainTrait;
+
+    /**
+     * Выполнить действие класса
+     * 
+     * Один класс может делать одно действие. Этот метод реализовывает это действие.
+     * 
+     * Валидация модели происходит ВСЕГДА в зависимости от правил валидации этой модели.
+     * 
+     * Если unsafe параметры имеют ошибки валидации, то выбросится исключение InvalidConfigException
+     * 
+     * @return null (void) ничего не должна возвращать
+     */
+    public function execute()
+    {
+        if (!$this->validate()) {
+            return false;
+        }
+
+        return true;
+    }
 
     /**
      * Конфигурация единственного сценария SCENARIO_DEFAULT для ядра Yii2
@@ -79,40 +100,49 @@ class DomainModel extends \yii\base\Model implements common\DomainInterface
      * return array_merge(parent::scenariosUno(), ['publicProperty', '!safeProperty']);
      * ```
      * 
+     * ВАЖНО:
+     * Вместо этого метода рекомендуется пользоваться
+     * - scenariosBackend
+     * - scenariosFrontend
+     * Их можно в дальнейшем наследовать
+     * 
      * @return array
      */
     public function scenariosUno()
     {
-        return parent::scenarios() [self::SCENARIO_DEFAULT];    // берем сценарии AR-модели по умолчанию
+        return $this->domainScenariosUno();
+    }
+
+    /**
+     * UNSAFE аттрибуты для бэкенд моделей
+     * 
+     * У аттрибутов НЕ НУЖНО ставить восклицательный знак "!" для признака unsafe
+     * библиотека MyDDD самостоятельно приведёт к совместимости Yii2
+     * 
+     * @return array
+     */
+    public function scenariosBackend()
+    {
+        return [];
+    }
+
+    /**
+     * SAFE аттрибуты для фроетенд моделей.
+     * 
+     * Работает так же как будто это был бы scenariosUno
+     * Сюда хоть и можно добавлять восклицательный знак "!" для признака unsafe,
+     * но делать это крайне не рекомендуется - этого не оценят будущие поколения
+     * 
+     * @return array
+     */
+    public function scenariosFrontend()
+    {
+        return [];
     }
 
     // =========================================================================
     // ПОДКАПОТНОЕ ПРОСТРАНСТВО
     // =========================================================================
-
-    /**
-     * Изменение поведения валидации
-     * Добавлено дополнительное поведение через validateFailedDefaultBehavior
-     * в случае неуспешной валидации по умолчанию добавлять ошибку в $this->domainLastError
-     * 
-     * validateFailedDefaultBehavior возможно переопределить,
-     * например можно выкидывать исключение в случае неуспешной валидации
-     * 
-     * @param string[]|string $attributeNames attribute name or list of attribute names that should be validated.
-     * If this parameter is empty, it means any attribute listed in the applicable
-     * validation rules should be validated.
-     * @param bool $clearErrors whether to call [[clearErrors()]] before performing validation
-     * @return bool whether the validation is successful without any error.
-     */
-    public function validate($attributeNames = null, $clearErrors = true)
-    {
-        if (parent::validate($attributeNames, $clearErrors)) {
-            return true;
-        } else {
-            $this->validateFailedDefaultBehavior();
-            return false;
-        }
-    }
 
     /**
      * Запрет системы сценариев. Оставляем только сценарий SCENARIO_DEFAULT, который требуется для ядра Yii2.
@@ -121,6 +151,20 @@ class DomainModel extends \yii\base\Model implements common\DomainInterface
     public final function scenarios()
     {
         return [self::SCENARIO_DEFAULT => $this->scenariosUno()];
+    }
+
+    /**
+     * Поведение модели при валидации изменено.
+     * 
+     * Подробнее wartur\myddd\common\DomainTrait::domainValidate($attributeNames = null, $clearErrors = true)
+     * 
+     * @param type $attributeNames
+     * @param type $clearErrors
+     * @return type
+     */
+    public function validate($attributeNames = null, $clearErrors = true)
+    {
+        return $this->domainValidate($attributeNames, $clearErrors);
     }
 
 }
