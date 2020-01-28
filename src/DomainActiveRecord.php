@@ -8,17 +8,19 @@
 
 namespace wartur\myddd;
 
+use yii\base\InvalidConfigException;
+
 /**
  * Базовый класс доменной ActiveRecord.
  * Является прозрачной настройкой над Yii2 ActiveRecord,
  * за исключением отключённого механизма сценариев.
  * 
- * Это набор удобных инструментов для работы с методологией MyDDD в Yii2
+ * Это набор удобных инструментов для работы по методике MyDDD в Yii2
  * Во главе угла ставится удобное конфигурирование класса, которое вместе
  * с названием класса является удобной документацией
- * Все инструменты за исключением сценариев надстроены над ядром Yii2
+ * Класс полностью надстроен над ядром Yii2
  * 
- * Небольшая инструкция к удобному использованию ActiveRecord в DDD.
+ * Небольшая инструкция к удобному использованию ActiveRecord в MyDDD.
  * 
  * Унаследованные классы от этой модели должны быть классами activeRecords.
  * Рекомендуется их генерировать через Gii в директорию /models/activeRecords
@@ -28,141 +30,45 @@ namespace wartur\myddd;
  * Далее в директории /models/activeModels требуется унаследовать все классы от
  * /models/activeRecords. Эти классы в лучшем случае должны быть анемичными.
  * В них должны быть только самые общие поведения вроде TimestampBehavior.
+ * В этих классах можно настраивать удобные геттеры для повышения удобства кодирования.
  * Их уже можно использовать в CRUD или в других моделях, но без программной логики, то есть только чистыми.
  * 
- * Далее в директории /models/activeDomains требуется унаследовать классы от
- * /models/activeModels для наращивания в них бизнес логики.
- * Вы можете выбрать любое мнемонически удобное название неймспейса.
- * Каждый класс в лучшем случае умеет делать одно единственное действие
+ * Далее в директорию /models/frontend пишем фронтенд классы
+ * Далее в директорию /models/backend пишем бэкенд классы
  * 
- * Классы унаследованные от классов из директорий /models/activeModels
- * могут быть 2-х типов. Фронтенд и Бэкенд классы.
- * 
- * Примеры названий Фронтенд классов, которыми администратор может управлять пользователями.
- * /models/activeDomains/admin/user/ChangePasswordUser
- * /models/activeDomains/admin/user/ResetPasswordUser
- * /models/activeDomains/admin/user/EditUser
- * 
- * Названия классов фактически должны описывать API системы и действие этого класса
- * должно транзакционно менять состояние информационной системы из одного в другое
- * 
- * Бэкенд классы находятся в неймспейсе Фонтенд класса. Например
- * /models/activeDomains/admin/user/changePasswordUser/EventLogger
- * 
- * Помните
- * - НЕЛЬЗЯ вызывать Фронтенд классы из Бэкенд классов домена!
- * - НЕЛЬЗЯ вызывать Бэкенд классы одного домена в другом домене!
- * - МОЖНО вызывать один Фронтенд из другого Фронтенда, но вне транзакций, (в методе afterSaveTransaction)
- * а сами классы начинают считаться Комплексными.
- * 
- * Остальное читайте в документации к методологии MyDDD
+ * Что такое MyDDD читайте в документации. Удачной работы
  */
-class DomainActiveRecord extends \yii\db\ActiveRecord implements common\DomainInterface
+class DomainActiveRecord extends \yii\db\ActiveRecord
 {
 
     use common\DomainTrait;
 
     /**
-     * Включить механизм валидации в транзакции.
-	 * 
-	 * Рекомендую использовать встроенный механизм Yii2,
-	 * который настраивается в transactionsUno.
-	 *
-	 * Зачем нужна валидация в транзакции?
-     * - Иногда вам надо проверить в базе данных кое какие данные,
-	 * перед тем, как начать дейтвия с данными
-	 * - Возможно изменить уровень изолированности транзакций
+     * Флаг, указывающий на то, что модель уже загружена в режиме FOR UPDATE
+     * Нужен для оптимизаций при определённых случаях работы
      * 
-     * Может принимать одно из следующих значений
-     * [[READ_UNCOMMITTED]], [[READ_COMMITTED]], [[REPEATABLE_READ]] and [[SERIALIZABLE]]
+     * С точки зрения доступа это PROTECTED INTERNAL метод, а не PUBLIC метод
+     * Поэтому эту проперти в унаследованном коде можно только читать,
+     * писать в неё нельзя - этим вы запутаете будущие поколения
      * 
-     * ```php
-     * // включим самый строгий режим
-     * public function enableTransaction() {
-     *     return \yii\db\Transaction::SERIALIZABLE;
-     * }
-     * ```
-     * 
-     * @return boolean|string Задать тип изоляции транзакции или указать что транзакции не нужны (FALSE)
+     * @var boolean
      */
-    public function enableTransaction()
-    {
-        return false;
-    }
+    public $domainModelIsAllreadyForUpdate = false;
 
     /**
-     * Действия при сохранении модели (insert|update, выполняющиеся ПОСЛЕ afterSave (после транзакции сохранения)
-     * 
-     * Сюда возможно добавить длительные вычислительные
-     * операции когда база данных уже разблокирована
-     * 
-     * Кроме того механизм позволяет делать составные Фронтенд классы
-     * 
-     * ```php
-     * // пример реализации
-     * public function afterSaveTransaction($success) {
-     *     // общий код
-     *     if ($success) {
-     *         // код в случае success
-     *     } else {
-     *         // код в случае fail
-     *     }
-     * }
-     * ```
-     * 
-     * @param boolean|integer $success
+     * Действия, которые надо выполнить до транзакции
      */
-    public function afterSaveTransaction($success)
-    {
-		
-    }
-
-    /**
-     * Действия при удалении модели, выполняющиеся ДО beforeDelete (перед транзакции удаления)
-     * 
-     * Механизм позволяет делать составные Фронтенд классы
-     * 
-     * ```php
-     * // пример реализации
-     * public function beforeDeleteTransaction() {
-     *     if(!parent::beforeDeleteTransaction()) {
-     *         return false;
-     *     }
-     *     // какой-то код
-     *     return true;
-     * }
-     * ```
-     * 
-     * @return boolean
-     */
-    public function beforeDeleteTransaction()
+    public function beforeTransaction()
     {
         return true;
     }
 
     /**
-     * Действия при удалении модели, выполняющиеся ПОСЛЕ afterDelete (после транзакции удаления)
+     * Действия, которые надо выполнить после транзакции
      * 
-     * Сюда возможно добавить длительные вычислительные
-     * операции когда база данных уже разблокирована
-     * 
-     * Кроме того механизм позволяет делать составные Фронтенд классы
-     * 
-     * ```php
-     * // пример реализации
-     * public function afterDeleteTransaction($success) {
-     *     // общий код
-     *     if ($success) {
-     *         // код в случае success
-     *     } else {
-     *         // код в случае fail
-     *     }
-     * }
-     * ```
-     * 
-     * @param boolean|integer $success
+     * @param boolean|int $success успешо или не успешно выполнена транзакция (insert|update|delete)
      */
-    public function afterDeleteTransaction($success)
+    public function afterTransaction($success)
     {
         
     }
@@ -178,11 +84,44 @@ class DomainActiveRecord extends \yii\db\ActiveRecord implements common\DomainIn
      * return array_merge(parent::scenariosUno(), ['publicProperty', '!safeProperty']);
      * ```
      * 
+     * ВАЖНО:
+     * Вместо этого метода рекомендуется пользоваться
+     * - scenariosBackend
+     * - scenariosFrontend
+     * Их можно в дальнейшем наследовать
+     * 
      * @return array
      */
     public function scenariosUno()
     {
-        return parent::scenarios() [self::SCENARIO_DEFAULT];    // берем сценарии AR-модели по умолчанию
+        return $this->domainScenariosUno();
+    }
+
+    /**
+     * UNSAFE аттрибуты для бэкенд моделей
+     * 
+     * У аттрибутов НЕ НУЖНО ставить восклицательный знак "!" для признака unsafe
+     * библиотека MyDDD самостоятельно приведёт к совместимости Yii2
+     * 
+     * @return array
+     */
+    public function scenariosBackend()
+    {
+        return [];
+    }
+
+    /**
+     * SAFE аттрибуты для фроетенд моделей.
+     * 
+     * Работает так же как будто это был бы scenariosUno
+     * Сюда хоть и можно добавлять восклицательный знак "!" для признака unsafe,
+     * но делать это крайне не рекомендуется - этого не оценят будущие поколения
+     * 
+     * @return array
+     */
+    public function scenariosFrontend()
+    {
+        return [];
     }
 
     /**
@@ -200,11 +139,182 @@ class DomainActiveRecord extends \yii\db\ActiveRecord implements common\DomainIn
      * }
      * ```
      * 
+     * Так как обычно модель делает одно/два действия, рекомендую использовать
+     * метод с синтаксическим сахаром transactionsActivate
+     * 
      * @return boolean|integer FALSE или конфигурация транзакций ядра Yii2 БЕЗ сценариев
      */
     public function transactionsUno()
     {
-        return false;   // по умолчанию транзакции отключены как в transactions
+        if ($this->transactionsActivate()) {
+            return self::OP_ALL;
+        } else {
+            return false;   // по умолчанию транзакции отключены как в transactions
+        }
+    }
+
+    /**
+     * Синтаксический сахар активации транзакций
+     * 
+     * Модель обычно имеет только одно/два действия.
+     * Следовательно удобнее всего активировать транзакции OP_ALL
+     * Или же вообще их не активировать
+     * 
+     * Этот метод просто возвращает true, если нужно активировать транзакции
+     * 
+     * @return boolean
+     */
+    public function transactionsActivate()
+    {
+        return false;
+    }
+
+    /**
+     * Загрузить данные модели заблокировав запись в транзакции
+     * 
+     * Используется для того, чтобы во время выполнения транзакции заблокировать
+     * модель прочитав её из базы данных
+     * 
+     * А так же получить последнюю версию данных, перед исключительной блокировкой FOR UPDATE
+     * 
+     * @param array|string|null $attributeNames какие поля загрузить. Можно оптимизировать запросы
+     * - null - загрузить ВСЕ поля модели
+     * - string - загрузить одно поле модели
+     * - array - загрузить список полей модели
+     * 
+     * @param type $forceUpdate обновить модель вне зависимости от того, была ли она помечена
+     * как блокированная FOR UPDATE. Не знаю зачем это надо, но этот параметр явно не буде лишним.
+     * Во всяком случае, я не рекомендую использовать подобные - это не оценят будущие поколения
+     * 
+     * @return boolean
+     * @throws InvalidConfigException
+     */
+    public function refreshForUpdate($attributeNames = null, $forceUpdate = false)
+    {
+        // очень часто требуется инвализировать только одну переменную
+        if (isset($attributeNames) && is_string($attributeNames)) {
+            $attributeNames = [$attributeNames];
+        }
+
+        // если модель уже загружена в режиме ForUpdate, перезагружать её не нужно, метод сработает в холостую
+        // как следствие делать любые другие проверки не обязательно
+        if ($this->domainModelIsAllreadyForUpdate && !$forceUpdate) {
+            return true;
+        }
+
+        // Если не активированы транзакции, попросим активировать
+        if (empty($this->transactionsUno())) {
+            throw new InvalidConfigException('Включите транзакцию при использовании refreshForUpdate');
+        }
+
+        // Если запись новая, то очевидно мы упадем
+        if ($this->isNewRecord) {
+            throw new InvalidConfigException('Новая модель не может сделать refresh');
+        }
+
+        // скопируем код из parent::refresh(), видимо для поддержки составных первичных ключей
+        $query = static::find();
+        $tableName = key($query->getTablesUsedInFrom());
+        $pk = [];
+        // disambiguate column names in case ActiveQuery adds a JOIN
+        foreach ($this->getPrimaryKey(true) as $key => $value) {
+            $pk[$tableName . '.' . $key] = $value;
+        }
+        $query->where($pk);
+
+        // в select будем грузить только то что нужно
+        if (isset($attributeNames)) {
+            $query->select($attributeNames); // запросим толко определенные колонки
+        }
+
+        // добавим блокировку FOR UPDATE
+        $sql = $query->createCommand()->getRawSql();
+        $record = static::findBySql($sql . ' FOR UPDATE')->one(); /* @var $record BaseActiveRecord */
+
+        if (isset($attributeNames)) {
+            // частично обновим
+            foreach ($attributeNames as $attribute) {
+                $this->setOldAttribute($attribute, $record->getOldAttribute($attribute));
+            }
+        } else {
+            // полностью обновим
+            $this->setOldAttributes($record->_oldAttributes);
+        }
+
+        return true;
+    }
+
+    /**
+     * {@inheritdoc}
+     * 
+     * К findOne добавлен функционал указания типа блокировки
+     * ДЛЯ БЛОКИРОВКИ record lock, gap lock или next-key lock
+     * Подробнее https://habr.com/ru/post/238513/
+     * 
+     * ВНИМАНИЕ!!!
+     * В случае использования этой функциональности с FOR UPDATE убедитесь:
+     * - что вы находитесь в транзакции
+     * - подчинённый код не откатит текущую транзакцию
+     * - вызываемой моделе в beforeTransaction нет сложных вычислений
+     * 
+     * Возможно, правильнее использовать стандартное поведение модели, то есть
+     * механизм двойного чтения с блокировкой при использовании refreshForUpdate
+     * 
+     * @param string $lock тип блокировки
+     * '' - пустая строка (по умолчанию)
+     * FOR UPDATE
+     * LOCK IN SHARE MODE
+     * 
+     * @return static|null ActiveRecord instance matching the condition, or `null` if nothing matches.
+     */
+    public static function findOne($condition, $lock = '')
+    {
+        $sql = static::findByCondition($condition)->createCommand()->getRawSql();
+        $model = static::findBySql($sql . ' ' . $lock)->one();
+        /* @var $model DomainActiveRecord */
+        if ($lock == 'FOR UPDATE') {
+            $model->domainModelIsAllreadyForUpdate = true;
+        }
+
+        return $model;
+    }
+
+    /**
+     * {@inheritdoc}
+     * 
+     * К findAll добавлен функционал указания типа блокировки
+     * ДЛЯ БЛОКИРОВКИ record lock, gap lock или next-key lock
+     * Подробнее https://habr.com/ru/post/238513/
+     * 
+     * ВНИМАНИЕ!!!
+     * В случае использования этой функциональности с FOR UPDATE убедитесь:
+     * - что вы находитесь в транзакции
+     * - подчинённый код не откатит текущую транзакцию
+     * - вызываемой моделе в beforeTransaction нет сложных вычислений
+     * 
+     * Этот метод рекомендуется использовать для исключения массовой активации
+     * механизма двойного чтения с блокировкой при использовании refreshForUpdate
+     * 
+     * @param string $lock тип блокировки
+     * '' - пустая строка (по умолчанию)
+     * FOR UPDATE
+     * LOCK IN SHARE MODE
+     * 
+     * @return static[] an array of ActiveRecord instances, or an empty array if nothing matches.
+     */
+    public static function findAll($condition, $lock = '')
+    {
+        $sql = static::findByCondition($condition)->createCommand()->getRawSql();
+        $models = static::findBySql($sql . ' ' . $lock)->all();
+        /* @var $models DomainActiveRecord[] */
+        if ($lock == 'FOR UPDATE') {
+            foreach ($models as &$model) {
+                $model->domainModelIsAllreadyForUpdate = true;
+            }
+            unset($model);
+        }
+
+        return $models;
     }
 
     // =========================================================================
@@ -212,122 +322,70 @@ class DomainActiveRecord extends \yii\db\ActiveRecord implements common\DomainIn
     // =========================================================================
 
     /**
-     * Изменение поведения валидации
-     * Добавлено дополнительное поведение через validateFailedDefaultBehavior
-     * в случае неуспешной валидации по умолчанию добавлять ошибку в $this->domainLastError
+     * Полностью переопределен метод ActiveRecord
+     * Добавил 2 новых метода для WORKFLOW MyDDD
+     * - beforeTransaction
+     * - afterTransaction
      * 
-     * validateFailedDefaultBehavior возможно переопределить,
-     * например можно выкидывать исключение в случае неуспешной валидации
+     * Валидацию вынес в этот метод, а в insert|update
      * 
-     * @param string[]|string $attributeNames attribute name or list of attribute names that should be validated.
-     * If this parameter is empty, it means any attribute listed in the applicable
-     * validation rules should be validated.
-     * @param bool $clearErrors whether to call [[clearErrors()]] before performing validation
-     * @return bool whether the validation is successful without any error.
-     */
-    public function validate($attributeNames = null, $clearErrors = true)
-    {
-        if (parent::validate($attributeNames, $clearErrors)) {
-            return true;
-        } else {
-            $this->validateFailedDefaultBehavior();
-            return false;
-        }
-    }
-
-    /**
-     * Реализация сохранения модели (insert|update) с добавлением следующего функционала:
-     * - afterSaveTransaction - код, выполняющийся после того как транзакция была завершена (успешно или нет)
-     * - функционал механизма транзакций при валидации. Смотри enableTransaction
+     * Все остальное поведение совместимо с оригиналом
      * 
-     * @param bool $runValidation whether to perform validation (calling [[validate()]])
-     * before saving the record. Defaults to `true`. If the validation fails, the record
-     * will not be saved to the database and this method will return `false`.
-     * @param array $attributeNames list of attribute names that need to be saved. Defaults to null,
-     * meaning all attributes that are loaded from DB will be saved.
-     * @return bool whether the saving succeeded (i.e. no validation errors occurred).
-     * @throws \Exception не перехваченная ошибка при транзакции
+     * @param boolean $runValidation
+     * @param array $attributeNames
+     * @return boolean
      */
     public function save($runValidation = true, $attributeNames = null)
     {
-        $enableTransaction = $this->enableTransaction();
-        if ($enableTransaction) {                   // если активирован механизм транзакций при валидации
-            $this->checkTransactionsConfig();       // проверить конфигурацию модели
-            $trans = $this->getDb()->beginTransaction($enableTransaction);
-            try {
-                // валидируем и сохраняем
-                $result = parent::save($runValidation, $attributeNames);
-                if ($result) {
-                    $trans->commit();
-                } else {
-                    $trans->rollBack();
-                }
-                $this->afterSaveTransaction($result);
-                return $result;
-            } catch (Exception $ex) {
-                $trans->rollBack();
-                throw $ex;
-            }
-        } else {
-            $result = parent::save($runValidation, $attributeNames);
-            $this->afterSaveTransaction($result);
-            return $result;
-        }
-    }
-
-    /**
-     * Реализация удаления модели (delete) с добавлением следующего функционала:
-     * - beforeDeleteTransaction - кол, выполняющийся до того как транзакция началась
-     * - afterSaveTransaction - код, выполняющийся после того как транзакция была завершена (успешно или нет)
-     * 
-     * @return int|false the number of rows deleted, or `false` if the deletion is unsuccessful for some reason.
-     * Note that it is possible the number of rows deleted is 0, even though the deletion execution is successful.
-     * @throws \Exception не перехваченная ошибка при транзакции
-     */
-    public function delete()
-    {
-        if (!$this->beforeDeleteTransaction()) {
+        if ($runValidation && !$this->validate($attributeNames)) {
+            Yii::info('Model not saved due to validation error.', __METHOD__);
             return false;
         }
 
-        $enablTransactionLevel = $this->enableTransaction();
-        if ($enablTransactionLevel) {
-            $this->checkTransactionsConfig();
-            $trans = $this->getDb()->beginTransaction($enablTransactionLevel);
-            try {
-                $result = parent::delete();
-                if ($result) {
-                    $trans->commit();
-                } else {
-                    $trans->rollBack();
-                }
-                $this->afterDeleteTransaction($result);
-                return $result;
-            } catch (Exception $ex) {
-                $trans->rollBack();
-                throw $ex;
-            }
-        } else {
-            $result = parent::delete();
-            $this->afterDeleteTransaction($result);
-            return $result;
+        if (!$this->beforeTransaction()) {
+            return false;
         }
+
+        if ($this->getIsNewRecord()) {
+            $result = $this->insert(false, $attributeNames);
+        } else {
+            $result = $this->update(false, $attributeNames) !== false;
+        }
+
+        $this->afterTransaction($result);
+
+        return $result;
     }
 
     /**
-     * Проверка того, есть ли ошибка в конфигурации механизма транзакций
-     * Дело в том, что при активации enableTransaction() и настройки transactionsUno
-     * будет происходит создание двойной транзакции, что является лишним.
+     * Полностью переопределен метод ActiveRecord
+     * Добавил 2 новых метода для WORKFLOW MyDDD
+     * - beforeTransaction
+     * - afterTransaction
      * 
-     * Поэтому в случае если активирован enableTransaction, система проверят нет ли конфликтов
+     * Добавлена валидация
+     * Ведь могут быть backend зависимости при удалении, например "удаляет делает" или "копирование информации в другую таблицу",
+     * Могут быть и frotnend зависимости, например "введите номер заказа для подтверждения удаления"
      * 
-     * @throws \yii\base\InvalidConfigException в случае, если обнаружена проблема в конфигурации
+     * Метод в целом никак не отличается от save, только мнемонически и основным действием
+     * 
+     * @param boolean $runValidation
+     * @param array $attributeNames
+     * @return boolean
      */
-    protected function checkTransactionsConfig()
+    public function delete($runValidation = true, $attributeNames = null)
     {
-        if (!empty($this->transactions())) {
-            throw new \yii\base\InvalidConfigException('При ручной транзакции DomainActiveRecord::enableTransaction() требуется отключить транзакции в модели. Метод DomainActiveRecord::transactionsUno() должен возвращать <empty> значение');
+        if ($runValidation && !$this->validate($attributeNames)) {
+            Yii::info('Model not deleted due to validation error.', __METHOD__);
+            return false;
         }
+        
+        if (!$this->beforeTransaction()) {
+            return false;
+        }
+        $result = parent::delete();
+        $this->afterTransaction($result);
+        return $result;
     }
 
     /**
@@ -354,6 +412,26 @@ class DomainActiveRecord extends \yii\db\ActiveRecord implements common\DomainIn
         } else {
             return [self::SCENARIO_DEFAULT => $trans];
         }
+    }
+
+    /**
+     * Валидация модели
+     * 
+     * Видоизменяем процесс валидации модели в зависимости от того
+     * какая модель сконфигурирована - фронтенд или бэкенд
+     * 
+     * если в unsafe аттрибутах присутствуют ошибки
+     * то в бэкенд или в фронтенд-моделе следует выбросить исключение InvalidConfigException
+     * InvalidConfigException - считается ошибкой программиста
+     * 
+     * @param array|null $attributeNames
+     * @param boolean $clearErrors
+     * @return boolean
+     * @throws InvalidConfigException ошибка конфигурации объекта
+     */
+    public function validate($attributeNames = null, $clearErrors = true)
+    {
+        return $this->domainValidate($attributeNames, $clearErrors);
     }
 
 }
