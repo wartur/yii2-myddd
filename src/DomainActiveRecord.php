@@ -8,6 +8,7 @@
 
 namespace wartur\myddd;
 
+use Yii;
 use yii\base\InvalidConfigException;
 
 /**
@@ -154,7 +155,11 @@ class DomainActiveRecord extends \yii\db\ActiveRecord
     }
 
     /**
-     * Синтаксический сахар активации транзакций
+     * Синтаксический сахар активации/деактивации транзакций
+     * 
+     * === ПО УМОЛЧАНИЮ ===
+     * СОГЛАСНО МЕТОДИКЕ И ДЛЯ ИСКЛЮЧЕНИЯ ОШИБОК ПРИ РАЗРАБОТКЕ
+     * ТРАНЗАКЦИИ ВСЕГДА АКТИВИРОВАНЫ
      * 
      * Модель обычно имеет только одно/два действия.
      * Следовательно удобнее всего активировать транзакции OP_ALL
@@ -166,7 +171,7 @@ class DomainActiveRecord extends \yii\db\ActiveRecord
      */
     public function transactionsActivate()
     {
-        return false;
+        return true;
     }
 
     /**
@@ -245,6 +250,27 @@ class DomainActiveRecord extends \yii\db\ActiveRecord
     }
 
     /**
+     * Синтаксический сахар, используется только для фронтент-модели ActiveRecord
+     * 
+     * Установить ошибку domainLastError и выбросить исключение для перехвата
+     * на форнтенд-моделе и вывода управляемой ошибки domainLastError
+     * Если точнее, то использовать требуется в afterSave|afterDelete методах,
+     * когда требуется отменить процесс завершения транзакции, так как в Yii2
+     * нет механизма остановить её дальнейшее протекание, кроме как через исключение
+     * 
+     * @param string $domainLastError информация о последней ошибке
+     * @param string $addErrorAttribute атрибут модели для которой требуется добавить
+     * ошибку как в domainLastError
+     * @param string $exClass название класса исключния
+     * @throws \yii\base\Exception выбрасывамое исключение, перехватываемое в save|delete методе
+     */
+    public function falseWithExcepion($domainLastError = 'Неизвестная ошибка', $addErrorAttribute = '_domainLastError', $exClass = \yii\base\Exception::class)
+    {
+        $this->falseWithError($domainLastError, $addErrorAttribute);
+        throw new $exClass($domainLastError);
+    }
+
+    /**
      * {@inheritdoc}
      * 
      * К findOne добавлен функционал указания типа блокировки
@@ -271,6 +297,9 @@ class DomainActiveRecord extends \yii\db\ActiveRecord
     {
         $sql = static::findByCondition($condition)->createCommand()->getRawSql();
         $model = static::findBySql($sql . ' ' . $lock)->one();
+        if (empty($model)) {
+            return $model;
+        }
         /* @var $model DomainActiveRecord */
         if ($lock == 'FOR UPDATE') {
             $model->domainModelIsAllreadyForUpdate = true;
@@ -346,10 +375,19 @@ class DomainActiveRecord extends \yii\db\ActiveRecord
             return false;
         }
 
-        if ($this->getIsNewRecord()) {
-            $result = $this->insert(false, $attributeNames);
-        } else {
-            $result = $this->update(false, $attributeNames) !== false;
+        // ловим исключения из afterSave
+        try {
+            if ($this->getIsNewRecord()) {
+                $result = $this->insert(false, $attributeNames);
+            } else {
+                $result = $this->update(false, $attributeNames) !== false;
+            }
+        } catch (\Exception $ex) {
+            if (empty($this->domainLastError)) {
+                throw $ex;
+            } else {
+                $result = false;
+            }
         }
 
         $this->afterTransaction($result);
@@ -379,11 +417,22 @@ class DomainActiveRecord extends \yii\db\ActiveRecord
             Yii::info('Model not deleted due to validation error.', __METHOD__);
             return false;
         }
-        
+
         if (!$this->beforeTransaction()) {
             return false;
         }
-        $result = parent::delete();
+
+        // ловим исключения из afterSave
+        try {
+            $result = parent::delete();
+        } catch (\Exception $ex) {
+            if (empty($this->domainLastError)) {
+                throw $ex;
+            } else {
+                $result = false;
+            }
+        }
+
         $this->afterTransaction($result);
         return $result;
     }
