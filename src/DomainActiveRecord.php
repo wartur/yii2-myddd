@@ -10,6 +10,7 @@ namespace wartur\myddd;
 
 use Yii;
 use yii\base\InvalidConfigException;
+use yii\db\ActiveQuery;
 
 /**
  * Базовый класс доменной ActiveRecord.
@@ -334,6 +335,78 @@ class DomainActiveRecord extends \yii\db\ActiveRecord
     public static function findAll($condition, $lock = '')
     {
         $sql = static::findByCondition($condition)->createCommand()->getRawSql();
+        $models = static::findBySql($sql . ' ' . $lock)->all();
+        /* @var $models DomainActiveRecord[] */
+        if ($lock == 'FOR UPDATE') {
+            foreach ($models as &$model) {
+                $model->domainModelIsAllreadyForUpdate = true;
+            }
+            unset($model);
+        }
+
+        return $models;
+    }
+
+    /**
+     * Создание произвольных запросов и получение одной записи ->one()
+     * С ПОДДЕРЖКОЙ БЛОКИРОВКИ record lock, gap lock или next-key lock
+     * Подробнее https://habr.com/ru/post/238513/
+     * 
+     * ВНИМАНИЕ!!!
+     * В случае использования этой функциональности с FOR UPDATE убедитесь:
+     * - что вы находитесь в транзакции
+     * - подчинённый код не откатит текущую транзакцию
+     * - вызываемой моделе в beforeTransaction нет сложных вычислений
+     * 
+     * Возможно, правильнее использовать стандартное поведение модели, то есть
+     * механизм двойного чтения с блокировкой при использовании refreshForUpdate
+     * 
+     * @param string $lock тип блокировки
+     * '' - пустая строка (по умолчанию)
+     * FOR UPDATE
+     * LOCK IN SHARE MODE
+     * 
+     * @return static|null ActiveRecord instance matching the condition, or `null` if nothing matches.
+     */
+    public static function findOneByQuery(ActiveQuery $query, $lock = '')
+    {
+        $sql = $query->createCommand()->getRawSql();
+        $model = static::findBySql($sql . ' ' . $lock)->one();
+        if (empty($model)) {
+            return $model;
+        }
+        /* @var $model DomainActiveRecord */
+        if ($lock == 'FOR UPDATE') {
+            $model->domainModelIsAllreadyForUpdate = true;
+        }
+
+        return $model;
+    }
+
+    /**
+     * Создание произвольных запросов и получение списка записей ->all()
+     * С ПОДДЕРЖКОЙ БЛОКИРОВКИ record lock, gap lock или next-key lock
+     * Подробнее https://habr.com/ru/post/238513/
+     * 
+     * ВНИМАНИЕ!!!
+     * В случае использования этой функциональности с FOR UPDATE убедитесь:
+     * - что вы находитесь в транзакции
+     * - подчинённый код не откатит текущую транзакцию
+     * - вызываемой моделе в beforeTransaction нет сложных вычислений
+     * 
+     * Этот метод рекомендуется использовать для исключения массовой активации
+     * механизма двойного чтения с блокировкой при использовании refreshForUpdate
+     * 
+     * @param string $lock тип блокировки
+     * '' - пустая строка (по умолчанию)
+     * FOR UPDATE
+     * LOCK IN SHARE MODE
+     * 
+     * @return static[] an array of ActiveRecord instances, or an empty array if nothing matches.
+     */
+    public static function findAllByQuery(ActiveQuery $query, $lock = '')
+    {
+        $sql = $query->createCommand()->getRawSql();
         $models = static::findBySql($sql . ' ' . $lock)->all();
         /* @var $models DomainActiveRecord[] */
         if ($lock == 'FOR UPDATE') {
