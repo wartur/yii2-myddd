@@ -236,6 +236,9 @@ class DomainActiveRecord extends \yii\db\ActiveRecord
         // добавим блокировку FOR UPDATE
         $sql = $query->createCommand()->getRawSql();
         $record = static::findBySql($sql . ' FOR UPDATE')->one(); /* @var $record BaseActiveRecord */
+        if(empty($record)) {
+            return false;
+        }
 
         if (isset($attributeNames)) {
             // частично обновим
