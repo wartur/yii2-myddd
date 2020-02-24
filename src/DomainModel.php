@@ -90,6 +90,27 @@ class DomainModel extends \yii\base\Model
     }
 
     /**
+     * Выполнить или выкинуть исключение
+     * 
+     * Удобный синтаксический сахар
+     * @param string $message Информация об ошибке
+     * @param type $className Название класса исключения
+     * @throws \yii\base\Exception
+     */
+    public function executeOrException($message = 'Ошибка выполнения', $className = \yii\base\Exception::class)
+    {
+        if ($this->execute()) {
+            return true;
+        }
+
+        if ($message == 'Ошибка сохранения') {
+            $reflect = new \ReflectionClass($this);
+            $message .= ' ' . $reflect->getShortName();
+        }
+        throw new $className($message);
+    }
+
+    /**
      * Конфигурация единственного сценария SCENARIO_DEFAULT для ядра Yii2
      * 
      * ```php
