@@ -166,6 +166,11 @@ trait DomainTrait
         $scenariosBackend = $this->scenariosBackend();
         $scenariosFrontend = $this->scenariosFrontend();
 
+        // Зададим приоритет фронтенда, если он был переопредлен
+        $scenariosBackend = array_filter($scenariosBackend, function($entry) use ($scenariosFrontend) {
+            return !in_array($entry, $scenariosFrontend);
+        });
+
         // если не заданы 2 специализировнных метода, то считаем что это повдение AR-модели по умолчанию
         if (empty($scenariosBackend) && empty($scenariosFrontend)) {
             return parent::scenarios() [self::SCENARIO_DEFAULT];    // берем сценарии AR-модели по умолчанию
@@ -183,7 +188,7 @@ trait DomainTrait
 
     /**
      * Просто удаляем все required правила
-	 * Метод помогает полноценно работать search модлям
+     * Метод помогает полноценно работать search модлям
      */
     public static function clearRequiredRules($rules)
     {
