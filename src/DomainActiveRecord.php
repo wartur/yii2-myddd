@@ -236,7 +236,7 @@ class DomainActiveRecord extends \yii\db\ActiveRecord
         // добавим блокировку FOR UPDATE
         $sql = $query->createCommand()->getRawSql();
         $record = static::findBySql($sql . ' FOR UPDATE')->one(); /* @var $record BaseActiveRecord */
-        if(empty($record)) {
+        if (empty($record)) {
             return false;
         }
 
@@ -422,6 +422,55 @@ class DomainActiveRecord extends \yii\db\ActiveRecord
         return $models;
     }
 
+    /**
+     * Клонировать текущий объект ActiveRecord в новый объект нужного типа
+     * 
+     * Позволяет не перезагружая базу данных использовать модель ActiveRecord
+     * Для создания модели с текущим состоянием
+     * 
+     * @param type $className
+     * @param type $callback
+     * @return \wartur\myddd\DomainActiveRecord возвращаем доменную модель
+     * @throws InvalidConfigException ошибки использования
+     */
+    public function cloneTo($className, $callback = null)
+    {
+        $model = new $className();  /* @var $model DomainActiveRecord */
+        if (!(is_a($model, $this->cloneToMinimalClass()))) {
+            throw new InvalidConfigException('Модель не является наследником ' . $this->cloneToMinimalClass());
+        }
+        if ($model->tableName() !== $this->tableName()) {
+            throw new InvalidConfigException('Модель не является идентичной');
+        }
+        $model->setOldAttributes($this->getOldAttributes());
+        $model->afterFind();
+        $model->afterCloneTo($this);
+        return $model;
+    }
+
+    /**
+     * Действия которые можно совершить после клонирования.
+     * Позволяет клонировать какие-то специфические для модели поля.
+     * 
+     * @param DomainActiveRecord $sourсeModel
+     */
+    public function afterCloneTo($sourсeModel)
+    {
+        
+    }
+
+    /**
+     * Позволяет задать класс, от которого можно совершать клон объекта
+     * текущего уровня наследованя
+     * 
+     * @return string название класса
+     * Метод должен переопределяться и вызывать код return self::class;
+     */
+    public function cloneToMinimalClass()
+    {
+        return self::class; // по умолчанию все от DomainActiveRecord
+    }
+
     // =========================================================================
     // ПОДКАПОТНОЕ ПРОСТРАНСТВО
     // =========================================================================
@@ -460,6 +509,7 @@ class DomainActiveRecord extends \yii\db\ActiveRecord
             }
         } catch (\Exception $ex) {
             if (empty($this->domainLastError)) {
+                $this->afterTransaction(false);
                 throw $ex;
             } else {
                 $result = false;
@@ -469,6 +519,27 @@ class DomainActiveRecord extends \yii\db\ActiveRecord
         $this->afterTransaction($result);
 
         return $result;
+    }
+
+    /**
+     * Сохранить или выкинуть исключение
+     * 
+     * Удобный синтаксический сахар
+     * @param string $message Информация об ошибке
+     * @param type $className Название класса исключения
+     * @throws \yii\base\Exception
+     */
+    public function saveOrException($message = 'Ошибка сохранения', $className = \yii\base\Exception::class)
+    {
+        if ($this->save()) {
+            return true;
+        }
+
+        if ($message == 'Ошибка сохранения') {
+            $reflect = new \ReflectionClass($this);
+            $message .= ' ' . $reflect->getShortName();
+        }
+        throw new $className($message);
     }
 
     /**
@@ -503,6 +574,7 @@ class DomainActiveRecord extends \yii\db\ActiveRecord
             $result = parent::delete();
         } catch (\Exception $ex) {
             if (empty($this->domainLastError)) {
+                $this->afterTransaction(false);
                 throw $ex;
             } else {
                 $result = false;
@@ -511,6 +583,27 @@ class DomainActiveRecord extends \yii\db\ActiveRecord
 
         $this->afterTransaction($result);
         return $result;
+    }
+
+    /**
+     * Сохранить или выкинуть исключение
+     * 
+     * Удобный синтаксический сахар
+     * @param string $message Информация об ошибке
+     * @param type $className Название класса исключения
+     * @throws \yii\base\Exception
+     */
+    public function deleteOrException($message = 'Ошибка удаления', $className = \yii\base\Exception::class)
+    {
+        if ($this->delete()) {
+            return true;
+        }
+
+        if ($message == 'Ошибка сохранения') {
+            $reflect = new \ReflectionClass($this);
+            $message .= ' ' . $reflect->getShortName();
+        }
+        throw new $className($message);
     }
 
     /**
