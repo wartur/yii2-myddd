@@ -194,9 +194,10 @@ trait DomainTrait
     {
         $result = [];
         foreach ($rules as $entry) {
-            if ($entry[1] != 'required') {
-                $result[] = $entry;
+            if ($entry[1] == 'required' || $entry[1] == 'unique') {
+                continue;
             }
+            $result[] = $entry;
         }
         return $result;
     }
