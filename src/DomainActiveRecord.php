@@ -428,12 +428,11 @@ class DomainActiveRecord extends \yii\db\ActiveRecord
      * Позволяет не перезагружая базу данных использовать модель ActiveRecord
      * Для создания модели с текущим состоянием
      * 
-     * @param type $className
-     * @param type $callback
+     * @param string $className название класса в который преобразовать данный класс
      * @return \wartur\myddd\DomainActiveRecord возвращаем доменную модель
      * @throws InvalidConfigException ошибки использования
      */
-    public function cloneTo($className, $callback = null)
+    public function cloneTo($className)
     {
         $model = new $className();  /* @var $model DomainActiveRecord */
         if (!(is_a($model, $this->cloneToMinimalClass()))) {
@@ -443,6 +442,7 @@ class DomainActiveRecord extends \yii\db\ActiveRecord
             throw new InvalidConfigException('Модель не является идентичной');
         }
         $model->setOldAttributes($this->getOldAttributes());
+        $model->setAttributes($this->getOldAttributes(), false);
         $model->afterFind();
         $model->afterCloneTo($this);
         return $model;
