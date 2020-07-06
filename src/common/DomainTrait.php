@@ -17,6 +17,8 @@ use yii\helpers\Json;
  * Здесь располагаются общий функционал для методики MyDDD для:
  * - DomainModel
  * - DomainActiveRecord
+ * 
+ * @property-read string $errorsJson Ошибки закодированные в JSON (нужно для удобного чтения и анализа)
  */
 trait DomainTrait
 {
@@ -200,6 +202,15 @@ trait DomainTrait
             $result[] = $entry;
         }
         return $result;
+    }
+
+    /**
+     * Получить Errors закодированное в JSON
+     * @return string
+     */
+    public function getErrorsJson()
+    {
+        return Json::encode($this->getErrors());
     }
 
 }
