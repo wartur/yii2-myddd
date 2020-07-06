@@ -428,13 +428,20 @@ class DomainActiveRecord extends \yii\db\ActiveRecord
      * Позволяет не перезагружая базу данных использовать модель ActiveRecord
      * Для создания модели с текущим состоянием
      * 
-     * @param string $className название класса в который преобразовать данный класс
+     * @param string $className название класса в который преобразовать данный класс (если NULL, то создаст копию объекта)
      * @return \wartur\myddd\DomainActiveRecord возвращаем доменную модель
      * @throws InvalidConfigException ошибки использования
      */
-    public function cloneTo($className)
+    public function cloneTo($className = null)
     {
-        $model = new $className();  /* @var $model DomainActiveRecord */
+        if (empty($className)) {
+            $currentClass = get_class($this);
+            $model = new $currentClass();
+        } else {
+            $model = new $className();
+        }
+        /* @var $model DomainActiveRecord */
+
         if (!(is_a($model, $this->cloneToMinimalClass()))) {
             throw new InvalidConfigException('Модель не является наследником ' . $this->cloneToMinimalClass());
         }
