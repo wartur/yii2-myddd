@@ -268,7 +268,7 @@ class DomainActiveRecord extends \yii\db\ActiveRecord
      * @param string $exClass название класса исключния
      * @throws \yii\base\Exception выбрасывамое исключение, перехватываемое в save|delete методе
      */
-    public function falseWithExcepion($domainLastError = 'Неизвестная ошибка', $addErrorAttribute = '_domainLastError', $exClass = \yii\base\Exception::class)
+    public function falseWithException($domainLastError = 'Неизвестная ошибка', $addErrorAttribute = '_domainLastError', $exClass = \yii\base\Exception::class)
     {
         $this->falseWithError($domainLastError, $addErrorAttribute);
         throw new $exClass($domainLastError);
