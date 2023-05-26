@@ -205,6 +205,32 @@ trait DomainTrait
     }
 
     /**
+     * Очистка автоматических правил
+     * @param array $rules список правил
+     * @param array $for какие правила следует очистить
+     * @return array результирущий список правил
+     */
+    public static function clearAutoRules(array $rules, array $for)
+    {
+        $indexFor = array_flip($for);
+
+        $result = [];
+        foreach ($rules as $entry) {
+            $newAttributes = [];
+            foreach ($entry[0] as $attributeName) {
+                if (isset($indexFor[$attributeName])) {
+                    continue;
+                }
+                $newAttributes[] = $attributeName;
+            }
+            $entry[0] = $newAttributes;
+            $result[] = $entry;
+        }
+
+        return $result;
+    }
+
+    /**
      * Получить Errors закодированное в JSON
      * @return string
      */
